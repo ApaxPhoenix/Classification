@@ -9,32 +9,30 @@ from typing import Callable, Optional, Tuple, Union
 import logging
 import warnings
 
-# Get our logger for tracking what's happening
+# Use logger configured in main application
 logger = logging.getLogger("loader")
 
 
 class DatasetLoader(Dataset):
     """
-    A simple dataset loader for images organized in folders.
+    Dataset loader for classification tasks with folder-based organization.
 
-    This basically takes a folder structure where each subfolder is a different
-    class (like "cats", "dogs", "cars") and loads all the images from those
-    folders. It's built on top of PyTorch's ImageFolder but with better error
-    handling so it won't crash on corrupted images.
+    Handles image datasets organized in directories where each subdirectory
+    represents a different class. Built on PyTorch's ImageFolder with enhanced
+    error handling for corrupted or unreadable images.
 
-    Your folder should look like:
-    my_dataset/
-    ├── cats/
-    │   ├── cat1.jpg
-    │   ├── cat2.png
-    │   └── ...
-    ├── dogs/
-    │   ├── dog1.jpg
-    │   ├── dog2.png
-    │   └── ...
-    └── cars/
-        ├── car1.jpg
-        └── ...
+    Expected directory structure:
+        dataset/
+        ├── class/
+        │   ├── image1.jpg
+        │   ├── image2.png
+        │   └── ...
+        └── class/
+            ├── image1.jpg
+            └── ...
+
+    The subdirectory names become class labels, and all supported image
+    formats within each directory are loaded as training samples.
     """
 
     def __init__(
@@ -43,83 +41,85 @@ class DatasetLoader(Dataset):
         transform: Optional[Callable[[Image], torch.Tensor]] = None,
     ) -> None:
         """
-        Set up the dataset loader.
+        Initialize dataset loader with directory path and transforms.
 
         Args:
-            dirpath: Path to your main dataset folder (the one with subfolders for each class)
-            transform: Any image transformations you want to apply (resize, normalize, etc.)
+            dirpath: Root directory containing class subdirectories
+            transform: Optional preprocessing pipeline for images
 
-        Your directory needs to have subfolders - each subfolder name becomes a class label.
+        Raises:
+            ValueError: When directory doesn't exist or contains no class folders
         """
-        # Make sure the directory actually exists
+        # Validate directory existence
         if not dirpath.is_dir():
-            logger.error(f"Can't find directory: {dirpath}")
-            raise ValueError(f"Directory {dirpath} doesn't exist or isn't accessible")
+            logger.error(f"Directory not found: {dirpath}")
+            raise ValueError(f"Directory {dirpath} does not exist or is not accessible")
 
-        # Make sure it's not empty
+        # Check for empty directory
         if not any(dirpath.iterdir()):
-            logger.error(f"Directory {dirpath} is empty - no class folders found")
-            raise ValueError(f"Directory {dirpath} is empty - need subfolders for each class")
+            logger.error(f"Empty directory: {dirpath}")
+            raise ValueError(f"Directory {dirpath} is empty - requires class subdirectories")
 
-        # Store the transform function
+        # Store transformation pipeline
         self.transform: Optional[Callable[[Image], torch.Tensor]] = transform
 
-        # Use PyTorch's ImageFolder to do the heavy lifting
+        # Initialize PyTorch ImageFolder for directory traversal
         self.dataset: ImageFolder = ImageFolder(root=str(dirpath))
 
-        logger.info(f"Dataset loaded: {len(self.dataset)} images from {dirpath}")
+        logger.info(f"Dataset initialized: {len(self.dataset)} images from {dirpath}")
 
     def __len__(self) -> int:
         """
-        How many images are in the dataset?
+        Return total number of images in the dataset.
 
         Returns:
-            Total number of images we found
+            Count of all images across all class directories
         """
         return len(self.dataset)
 
     def __getitem__(self, idx: int) -> Union[Tuple[Image, int], Tuple[None, None]]:
         """
-        Get a specific image and its class label.
+        Retrieve image and label at specified index with error recovery.
 
-        This tries to load the image at the given index. If that image is
-        corrupted or can't be read, it'll try the next one, and so on.
-        If we run out of images, it returns None.
+        Attempts to load the requested image, automatically skipping corrupted
+        files and trying subsequent indices until a valid image is found or
+        all images are exhausted.
 
         Args:
-            idx: Which image to get (starting from 0)
+            idx: Index of image to retrieve
 
         Returns:
-            A tuple of (image, class_number) if successful, or (None, None) if failed
+            Tuple containing (image, label) on success,
+            or (None, None) if no valid images remain
         """
-        # Keep trying until we get a good image or run out
+        # Iterate through indices until valid image found
         while True:
             try:
-                # Try to load the image and its label
+                # Attempt to load image and associated label
                 image: Union[Image, torch.Tensor]
                 label: int
                 image, label = self.dataset[idx]
 
-                # Make sure we have a PIL Image (some datasets return tensors)
+                # Ensure PIL Image format for consistency
                 if not isinstance(image, Image):
                     image = transforms.ToPILImage()(image)
 
-                # Apply any transforms if we have them
+                # Apply preprocessing transforms if specified
                 if self.transform:
                     image = self.transform(image)
 
                 return image, label
 
             except (UnidentifiedImageError, OSError) as error:
-                # This image is corrupted or unreadable
-                logger.error(f"Couldn't load image at index {idx}: {error}")
+                # Handle corrupted or unreadable image files
+                logger.error(f"Failed to load image at index {idx}: {error}")
                 warnings.warn(f"Skipping corrupted image at index {idx}: {str(error)}")
 
-                # Try the next image
+                # Move to next available index
                 idx += 1
 
-                # Don't go on forever - if we've tried everything, give up
+                # Prevent infinite loop when all images are corrupted
                 if idx >= len(self):
-                    logger.error("Ran out of images to try - they might all be corrupted")
-                    warnings.warn("No valid images found - check your dataset for corruption")
+                    logger.error("All remaining images unreadable - dataset may be corrupted")
+                    warnings.warn("No valid images available - verify dataset integrity")
                     return None, None

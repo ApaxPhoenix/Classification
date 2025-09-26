@@ -9,68 +9,69 @@ import warnings
 
 class Bar:
     """
-    A nice progress bar for showing how your training is going.
+    Async progress bar for terminal display during long-running operations.
 
-    This creates those cool progress bars you see in terminals that show
-    percentage complete, how fast things are going, and how much time is left.
-    Works with async code and automatically cleans up after itself.
+    Creates visual progress indicators showing completion percentage, processing
+    speed, and estimated time remaining. Supports custom metrics display and
+    integrates with async/await patterns. Automatically handles cleanup when
+    operations complete or encounter errors.
 
-    It's pretty flexible - you can add your own metrics like loss values
-    or accuracy scores that get displayed alongside the progress.
+    The progress bar updates in-place on the terminal and can display additional
+    metrics like loss values or accuracy scores alongside the main progress.
     """
 
     def __init__(
             self, iterations: int, title: str = "Loading", steps: int = 40
     ) -> None:
         """
-        Set up a new progress bar.
+        Initialize progress bar with operation parameters.
 
         Args:
-            iterations: Total number of things you need to process
-            title: What to call this progress bar (like "Training" or "Loading")
-            steps: How detailed the bar should be (more steps = smoother animation)
+            iterations: Total number of items to process
+            title: Display label for the progress operation
+            steps: Character width of progress bar (higher = smoother updates)
         """
-        # Store how many items we need to process total
+        # Total number of operations to complete
         self.iterations: int = iterations
 
-        # What we're calling this progress bar
+        # Display label for this progress bar
         self.title: str = title
 
-        # How many characters wide the bar should be
+        # Visual width of progress bar in characters
         self.steps: int = steps
 
-        # Place to store extra info like loss values
+        # Storage for additional metrics to display
         self.items: Dict[str, str] = {}
 
     async def update(self, batch: int, time: float, final: bool = False) -> None:
         """
-        Update the progress bar with where we're at now.
+        Refresh progress display with current completion status.
 
-        This calculates how much we've done, how fast we're going,
-        and estimates how much time is left. Then it draws the
-        updated progress bar on screen.
+        Calculates completion percentage, processing throughput, and estimated
+        time remaining. Renders updated progress bar to terminal with all
+        current metrics.
 
         Args:
-            batch: How many items we've finished so far
-            time: When we started (for calculating speed)
-            final: Is this the last update? (adds a newline at the end)
+            batch: Number of items completed so far
+            time: Operation start timestamp for speed calculation
+            final: Whether this is the final update (adds newline)
         """
-        # Figure out how long we've been running
+        # Calculate elapsed time since start
         elapsed: float = np.subtract(
             asyncio.get_event_loop().time(), time
         )
 
-        # What percentage are we done?
+        # Calculate completion percentage
         percentage: float = np.divide(batch, self.iterations)
 
-        # How fast are we processing items?
+        # Calculate processing rate in items per second
         throughput: np.array = np.where(
             np.greater(elapsed, 0),
             np.floor_divide(batch, elapsed),
             0
         )
 
-        # How much time do we probably have left?
+        # Estimate remaining time based on current rate
         eta: np.array = np.where(
             np.greater(batch, 0),
             np.divide(
@@ -80,14 +81,14 @@ class Bar:
             0,
         )
 
-        # Build the actual progress bar visual
+        # Construct visual progress bar representation
         bar: str = chars.add(
             "|",
             chars.add(
-                # Fill in the completed part with # symbols
+                # Filled portion using hash characters
                 "".join(np.repeat("#", np.ceil(np.multiply(percentage, self.steps)))),
                 chars.add(
-                    # Fill the rest with spaces
+                    # Empty portion using spaces
                     "".join(
                         np.repeat(
                             " ",
@@ -97,28 +98,28 @@ class Bar:
                             ),
                         )
                     ),
-                    # Add the numbers showing progress
+                    # Progress counter display
                     f"| {batch:03d}/{self.iterations:03d}",
                 ),
             ),
         )
 
-        # Write the complete progress line to the terminal
+        # Output complete progress line to terminal
         sys.stdout.write(
             chars.add(
                 chars.add(
                     chars.add(
-                        # Main progress info with percentage, time, and speed
+                        # Core progress information with timing
                         f"\r{self.title}: {bar} [{np.multiply(percentage, 100):.2f}%] in {elapsed:.1f}s "
                         f"({throughput:.1f}/s, ETA: {eta:.1f}s)",
 
-                        # Add any extra metrics if we have them
+                        # Additional metrics if available
                         np.where(
                             np.greater(np.size(self.items), 0),
                             chars.add(
                                 " (",
                                 chars.add(
-                                    # Show all the extra metrics separated by commas
+                                    # Format custom metrics as comma-separated list
                                     ", ".join(
                                         [
                                             f"{name}: {value}"
@@ -137,38 +138,40 @@ class Bar:
             )
         )
 
-        # If this is the final update, add a newline so the next output doesn't overwrite us
+        # Add newline for final update to prevent overwriting
         if final:
             sys.stdout.write("\n")
 
-        # Make sure everything gets printed right away
+        # Force immediate output to terminal
         sys.stdout.flush()
 
     async def postfix(self, **kwargs: Union[str, int, float]) -> None:
         """
-        Add extra info to show alongside the progress bar.
+        Update additional metrics displayed with progress bar.
 
-        This is super handy for showing things like current loss,
-        accuracy, learning rate, or whatever else you want to track.
+        Accepts arbitrary key-value pairs for displaying supplementary
+        information like training loss, accuracy, or other relevant metrics
+        alongside the main progress indicator.
 
         Args:
-            **kwargs: Whatever metrics you want to display
-                     (like loss=0.45, accuracy=0.89, etc.)
+            **kwargs: Metric names and values to display
 
         Example:
-            await bar.postfix(loss=0.234, lr=0.001)
-            # Shows: (loss: 0.234, lr: 0.001)
+            await bar.postfix(loss=0.234, accuracy=0.891)
         """
-        # Add the new metrics to our collection
+        # Update metrics dictionary with new values
         self.items.update(kwargs)
 
     async def __aenter__(self) -> "Bar":
         """
-        Makes this work with 'async with' statements.
+        Enable usage as async context manager.
 
-        This lets you do:
-            async with Bar(100, "Training") as pbar:
-                # your training code here
+        Returns:
+            Bar instance for use within async context block
+
+        Example:
+            async with Bar(total_items, "Processing") as progress:
+                # processing logic here
         """
         return self
 
@@ -179,26 +182,26 @@ class Bar:
             exc_tb: Optional[traceback.TracebackException],
     ) -> None:
         """
-        Cleans up when exiting the 'async with' block.
+        Handle cleanup when exiting async context manager.
 
-        If everything went well, it shows 100% completion.
-        If something went wrong, it shows a warning about the error.
+        On successful completion, displays final progress state. On exception,
+        shows warning message about the encountered error.
 
         Args:
-            exc_type: What kind of error happened (if any)
-            exc_val: The actual error object
-            exc_tb: Error traceback info
+            exc_type: Exception class if error occurred
+            exc_val: Exception instance that was raised
+            exc_tb: Traceback information for the exception
         """
-        # If everything finished normally
+        # Handle normal completion
         if exc_type is None:
-            # Show final completion status
+            # Display final completion state
             await self.update(
                 self.iterations,
                 asyncio.get_event_loop().time(),
                 final=True
             )
         else:
-            # Something went wrong - let the user know
+            # Handle error case with warning message
             warnings.warn(
-                f"\n{self.title} hit an error: {exc_val}"
+                f"\n{self.title} encountered error: {exc_val}"
             )

@@ -16,22 +16,20 @@ import logging
 import warnings
 from bar import Bar
 
-# Set up logging so we can keep track of what's happening during training
+# Use logger configured in main application
 logger = logging.getLogger("trainer")
 
 
 class Trainer:
-    """A trainer class that handles everything you need for training image classification models.
+    """Classification model training controller with automatic optimization configuration.
 
-    This class takes care of the entire training process for popular models like AlexNet,
-    ResNet, VGG, MobileNet, EfficientNet, and DenseNet. It loads your data, sets up the
-    model, runs training and validation loops, tests the final model, and saves everything
-    properly.
+    Handles complete training workflows for popular CNN architectures including
+    AlexNet, ResNet variants, VGG models, MobileNet, EfficientNet, and DenseNet.
+    Automatically selects appropriate optimizers, learning rate schedules, and
+    hyperparameters based on the specific model architecture.
 
-    It also handles multi-GPU training if you have multiple graphics cards, keeps detailed
-    logs of what's happening, watches for overfitting, and automatically saves checkpoints.
-    Plus, it sets up the right optimizers and learning rates for each type of model based
-    on what works best in practice.
+    Features include multi-GPU support, detailed logging, overfitting detection,
+    automatic checkpointing, and performance monitoring throughout training.
     """
 
     def __init__(
@@ -52,182 +50,182 @@ class Trainer:
             seed: Optional[int] = None,
             parallelism: bool = False,
     ) -> None:
-        """Sets up everything needed to train your model.
+        """Initialize training configuration and validate all parameters.
 
-        This is where all the magic happens - we check that everything looks good,
-        set up your datasets, pick the best optimizer for your specific model type,
-        and get everything ready for training.
+        Validates input parameters, configures datasets, and sets up model-specific
+        optimization strategies based on established best practices for each
+        architecture type.
 
         Args:
-            module: The neural network you want to train
-            training_path: Where your training images are stored
-            validation_path: Where your validation images are stored
-            testing_path: Where your test images are stored
-            weights_path: Path to pre-trained weights if you want to start from there
-            dimensions: Image size as (height, width) - all images get resized to this
-            epochs: How many times to go through the entire training dataset
-            batch: How many images to process at once
-            lr: Learning rate - how big steps the model takes when learning
-            decay: Weight decay for regularization (helps prevent overfitting)
-            gamma: How much to reduce learning rate over time
-            momentum: Momentum factor for SGD (helps with training stability)
-            workers: Number of CPU threads for loading data
+            module: PyTorch neural network model to train
+            training_path: Directory containing training dataset
+            validation_path: Directory containing validation dataset
+            testing_path: Directory containing test dataset
+            weights_path: Optional path to pre-trained model weights
+            dimensions: Target image size as (height, width) tuple
+            epochs: Number of training epochs to execute
+            batch: Batch size for training and evaluation
+            lr: Learning rate for optimizer (architecture-specific defaults used if None)
+            decay: Weight decay regularization factor
+            gamma: Learning rate scheduler decay factor
+            momentum: SGD momentum parameter
+            workers: Number of data loading worker processes
             seed: Random seed for reproducible results
-            parallelism: Whether to use multiple GPUs if available
+            parallelism: Whether to enable multi-GPU parallel training
 
         Raises:
-            TypeError: If you don't pass in a proper PyTorch model
-            ValueError: If any of the paths don't exist or parameters are weird
+            TypeError: When module is not a PyTorch nn.Module
+            ValueError: When paths don't exist or parameters are invalid
         """
 
-        # Make sure what you gave us is actually a PyTorch model
+        # Validate model type
         if not isinstance(module, nn.Module):
-            logger.error(f"Expected a PyTorch model, but got {type(module)}.")
-            raise TypeError(f"Expected a PyTorch model, but got {type(module)}.")
-        logger.info(f"Got a {type(module).__name__} model - looks good!")
+            logger.error(f"Expected nn.Module, received {type(module)}")
+            raise TypeError(f"Expected PyTorch model, got {type(module)}")
+        logger.info(f"Model validated: {type(module).__name__}")
 
-        # Check that all your data folders actually exist
+        # Validate dataset paths
         if not isinstance(training_path, Path) or not training_path.exists():
-            logger.error(f"Can't find training data at: {training_path}")
-            raise ValueError(f"Can't find training data at: {training_path}")
-        logger.info(f"Found training data at: {training_path}")
+            logger.error(f"Training path invalid: {training_path}")
+            raise ValueError(f"Training directory not found: {training_path}")
+        logger.info(f"Training dataset located: {training_path}")
 
         if not isinstance(validation_path, Path) or not validation_path.exists():
-            logger.error(f"Can't find validation data at: {validation_path}")
-            raise ValueError(f"Can't find validation data at: {validation_path}")
-        logger.info(f"Found validation data at: {validation_path}")
+            logger.error(f"Validation path invalid: {validation_path}")
+            raise ValueError(f"Validation directory not found: {validation_path}")
+        logger.info(f"Validation dataset located: {validation_path}")
 
         if not isinstance(testing_path, Path) or not testing_path.exists():
-            logger.error(f"Can't find test data at: {testing_path}")
-            raise ValueError(f"Can't find test data at: {testing_path}")
-        logger.info(f"Found test data at: {testing_path}")
+            logger.error(f"Test path invalid: {testing_path}")
+            raise ValueError(f"Test directory not found: {testing_path}")
+        logger.info(f"Test dataset located: {testing_path}")
 
-        # Make sure image dimensions make sense
+        # Validate image dimensions
         if not isinstance(dimensions, tuple) or len(dimensions) != 2:
-            logger.error(f"Image dimensions should be like (224, 224), got: {dimensions}")
-            raise ValueError(f"Image dimensions should be like (224, 224), got: {dimensions}")
-        logger.info(f"Will resize all images to: {dimensions}")
+            logger.error(f"Invalid dimensions format: {dimensions}")
+            raise ValueError(f"Dimensions must be (height, width) tuple, got: {dimensions}")
+        logger.info(f"Image target size: {dimensions}")
 
-        # Check training parameters
+        # Validate training parameters
         if epochs is None or not isinstance(epochs, int) or epochs <= 0:
-            logger.error(f"Epochs should be a positive number, got: {epochs}")
-            raise ValueError(f"Epochs should be a positive number, got: {epochs}")
-        logger.info(f"Training for {epochs} epochs")
+            logger.error(f"Invalid epochs value: {epochs}")
+            raise ValueError(f"Epochs must be positive integer, got: {epochs}")
+        logger.info(f"Training duration: {epochs} epochs")
 
         if batch is None or not isinstance(batch, int) or batch <= 0:
-            logger.error(f"Batch size should be a positive number, got: {batch}")
-            raise ValueError(f"Batch size should be a positive number, got: {batch}")
-        logger.info(f"Using batch size of {batch}")
+            logger.error(f"Invalid batch size: {batch}")
+            raise ValueError(f"Batch size must be positive integer, got: {batch}")
+        logger.info(f"Batch size configured: {batch}")
 
-        # Check if pre-trained weights path exists (if provided)
+        # Validate weights path if provided
         if weights_path and (not isinstance(weights_path, Path) or not weights_path.exists()):
-            logger.warning(f"Can't find weights file at: {weights_path}")
-            warnings.warn(f"Can't find weights file at: {weights_path}", UserWarning)
+            logger.warning(f"Weights path not found: {weights_path}")
+            warnings.warn(f"Pre-trained weights not accessible: {weights_path}", UserWarning)
         elif weights_path:
-            logger.info(f"Will load pre-trained weights from: {weights_path}")
+            logger.info(f"Pre-trained weights specified: {weights_path}")
 
-        # Give warnings if parameter types look wrong
+        # Validate optional parameters with type checking
         if lr is not None and not isinstance(lr, (float, int)):
-            logger.warning(f"Learning rate should be a number, got: {type(lr)}")
-            warnings.warn(f"Learning rate should be a number, got: {type(lr)}", UserWarning)
+            logger.warning(f"Learning rate type invalid: {type(lr)}")
+            warnings.warn(f"Learning rate should be numeric, got: {type(lr)}", UserWarning)
         elif lr is not None:
-            logger.info(f"Using learning rate of {lr}")
+            logger.info(f"Learning rate override: {lr}")
 
         if decay is not None and not isinstance(decay, (float, int)):
-            logger.warning(f"Weight decay should be a number, got: {type(decay)}")
-            warnings.warn(f"Weight decay should be a number, got: {type(decay)}", UserWarning)
+            logger.warning(f"Weight decay type invalid: {type(decay)}")
+            warnings.warn(f"Weight decay should be numeric, got: {type(decay)}", UserWarning)
         elif decay is not None:
-            logger.info(f"Using weight decay of {decay}")
+            logger.info(f"Weight decay override: {decay}")
 
         if gamma is not None and not isinstance(gamma, (float, int)):
-            logger.warning(f"Gamma should be a number, got: {type(gamma)}")
-            warnings.warn(f"Gamma should be a number, got: {type(gamma)}", UserWarning)
+            logger.warning(f"Gamma type invalid: {type(gamma)}")
+            warnings.warn(f"Gamma should be numeric, got: {type(gamma)}", UserWarning)
         elif gamma is not None:
-            logger.info(f"Using gamma of {gamma}")
+            logger.info(f"Gamma override: {gamma}")
 
         if momentum is not None and not isinstance(momentum, (float, int)):
-            logger.warning(f"Momentum should be a number, got: {type(momentum)}")
-            warnings.warn(f"Momentum should be a number, got: {type(momentum)}", UserWarning)
+            logger.warning(f"Momentum type invalid: {type(momentum)}")
+            warnings.warn(f"Momentum should be numeric, got: {type(momentum)}", UserWarning)
         elif momentum is not None:
-            logger.info(f"Using momentum of {momentum}")
+            logger.info(f"Momentum override: {momentum}")
 
         if workers is not None and not isinstance(workers, int):
-            logger.warning(f"Number of workers should be an integer, got: {type(workers)}")
-            warnings.warn(f"Number of workers should be an integer, got: {type(workers)}", UserWarning)
+            logger.warning(f"Workers type invalid: {type(workers)}")
+            warnings.warn(f"Worker count should be integer, got: {type(workers)}", UserWarning)
         elif workers is not None:
-            logger.info(f"Using {workers} worker threads")
+            logger.info(f"Data loading workers: {workers}")
 
         if seed is not None and not isinstance(seed, int):
-            logger.warning(f"Seed should be an integer, got: {type(seed)}")
-            warnings.warn(f"Seed should be an integer, got: {type(seed)}", UserWarning)
+            logger.warning(f"Seed type invalid: {type(seed)}")
+            warnings.warn(f"Random seed should be integer, got: {type(seed)}", UserWarning)
         elif seed is not None:
-            logger.info(f"Using random seed: {seed}")
+            logger.info(f"Random seed configured: {seed}")
 
         if parallelism is not None and not isinstance(parallelism, bool):
-            logger.warning(f"Parallelism should be True or False, got: {type(parallelism)}")
-            warnings.warn(f"Parallelism should be True or False, got: {type(parallelism)}", UserWarning)
+            logger.warning(f"Parallelism type invalid: {type(parallelism)}")
+            warnings.warn(f"Parallelism should be boolean, got: {type(parallelism)}", UserWarning)
         else:
-            logger.info(f"Multi-GPU training: {parallelism}")
+            logger.info(f"Multi-GPU training enabled: {parallelism}")
 
-        # Set random seed if provided - this makes results reproducible
+        # Configure reproducible random state
         if seed is not None:
             self.seed(seed=seed)
-            logger.info(f"Set random seed to {seed} for reproducible results")
+            logger.info(f"Random seed applied: {seed}")
 
-        # Figure out if we should use GPU or CPU
+        # Determine compute device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {self.device}")
+        logger.info(f"Compute device selected: {self.device}")
 
-        # Move model to GPU/CPU and store settings
+        # Configure model and store parameters
         self.module = module.to(self.device)
         self.dimensions = dimensions
         self.epochs = epochs
         self.workers = workers
 
-        # Create a place to store training and validation losses
+        # Initialize loss tracking storage
         self.cache = {
             "training": [],
             "validation": [],
         }
-        logger.info("Set up loss tracking")
+        logger.info("Loss tracking initialized")
 
-        # Use multiple GPUs if requested and available
+        # Configure multi-GPU processing if requested
         if parallelism and torch.cuda.device_count() > 1:
             self.module = nn.parallel.DistributedDataParallel(self.module)
-            logger.info(f"Using {torch.cuda.device_count()} GPUs for training")
+            logger.info(f"Multi-GPU training configured: {torch.cuda.device_count()} devices")
         else:
-            logger.info("Using single GPU/CPU")
+            logger.info("Single-device training mode")
 
-        # Load all the datasets
+        # Initialize dataset loaders
         try:
             self.training_dataset = self.loader(dirpath=training_path, batch=batch)
-            logger.info("Successfully loaded training data")
+            logger.info("Training dataset loader created")
         except Exception as error:
-            logger.error(f"Problem loading training data: {error}")
-            warnings.warn(f"Problem loading training data: {error}")
+            logger.error(f"Training dataset loading failed: {error}")
+            warnings.warn(f"Training data loading error: {error}")
 
         try:
             self.validation_dataset = self.loader(dirpath=validation_path, batch=batch)
-            logger.info("Successfully loaded validation data")
+            logger.info("Validation dataset loader created")
         except Exception as error:
-            logger.error(f"Problem loading validation data: {error}")
-            warnings.warn(f"Problem loading validation data: {error}")
+            logger.error(f"Validation dataset loading failed: {error}")
+            warnings.warn(f"Validation data loading error: {error}")
 
         try:
             self.testing_dataset = self.loader(dirpath=testing_path, batch=batch)
-            logger.info("Successfully loaded test data")
+            logger.info("Test dataset loader created")
         except Exception as error:
-            logger.error(f"Problem loading test data: {error}")
-            warnings.warn(f"Problem loading test data: {error}")
+            logger.error(f"Test dataset loading failed: {error}")
+            warnings.warn(f"Test data loading error: {error}")
 
-        # Set up the loss function for classification
+        # Configure loss function for classification
         self.criterion = nn.CrossEntropyLoss()
-        logger.info("Using CrossEntropyLoss for classification")
+        logger.info("CrossEntropyLoss criterion configured")
 
-        # Choose the best optimizer and scheduler for each model type
-        # Different models work better with different settings based on research
+        # Configure architecture-specific optimization strategies
+        # Each model type has empirically determined optimal settings
         if isinstance(module, modules.AlexNet):
-            # AlexNet does well with Adam and step-based learning rate reduction
+            # AlexNet performs well with Adam and step scheduling
             decay = decay or 0.0001
             gamma = gamma or 0.5
             momentum = momentum or 0.9
@@ -237,7 +235,7 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=gamma)
 
         elif isinstance(module, modules.ResNet50):
-            # ResNet50 likes SGD with cosine annealing for smooth learning rate changes
+            # ResNet50 benefits from SGD with cosine annealing
             decay = decay or 0.0005
             gamma = gamma or 0.1
             momentum = momentum or 0.9
@@ -249,7 +247,7 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
         elif isinstance(module, modules.ResNet18):
-            # ResNet18 works best with SGD and milestone-based learning rate drops
+            # ResNet18 works well with SGD and milestone scheduling
             decay = decay or 0.0001
             gamma = gamma or 0.5
             momentum = momentum or 0.9
@@ -261,7 +259,7 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100], gamma=gamma)
 
         elif isinstance(module, modules.MobileNetLarge):
-            # MobileNet models are designed for mobile, so RMSprop with exponential decay works well
+            # MobileNet architectures optimized for RMSprop with exponential decay
             decay = decay or 0.0004
             gamma = gamma or 0.95
             momentum = momentum or 0.9
@@ -273,9 +271,9 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
 
         elif isinstance(module, modules.MobileNetSmall):
-            # Smaller MobileNet needs faster decay since it has less capacity
+            # Smaller MobileNet requires faster decay due to reduced capacity
             decay = decay or 0.0004
-            gamma = gamma or 0.9  # Faster decay for smaller model
+            gamma = gamma or 0.9  # Accelerated decay for compact model
             momentum = momentum or 0.9
             lr = lr or 0.045
 
@@ -285,7 +283,7 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
 
         elif isinstance(module, modules.VGG11):
-            # VGG models like SGD with scheduled learning rate drops
+            # VGG architectures perform well with SGD and milestone scheduling
             decay = decay or 0.0005
             gamma = gamma or 0.1
             momentum = momentum or 0.9
@@ -299,7 +297,7 @@ class Trainer:
             )
 
         elif isinstance(module, modules.VGG16):
-            # Same setup as VGG11 but can handle the deeper network
+            # VGG16 uses same optimization strategy as VGG11
             decay = decay or 0.0005
             gamma = gamma or 0.1
             momentum = momentum or 0.9
@@ -313,7 +311,7 @@ class Trainer:
             )
 
         elif isinstance(module, modules.EfficientNetB0):
-            # EfficientNets work great with Adam and cosine annealing
+            # EfficientNet models optimized for Adam with cosine annealing
             decay = decay or 0.0001
             gamma = gamma or 0.95
             momentum = momentum or 0.9
@@ -323,7 +321,7 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
         elif isinstance(module, modules.EfficientNetB3):
-            # Same as B0 but can handle being a bit larger
+            # EfficientNet B3 uses same strategy as B0 with scaling accommodation
             decay = decay or 0.0001
             gamma = gamma or 0.95
             momentum = momentum or 0.9
@@ -333,7 +331,7 @@ class Trainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
         elif isinstance(module, modules.DenseNet121):
-            # DenseNets do well with SGD and milestone scheduling
+            # DenseNet architectures benefit from SGD with milestone scheduling
             decay = decay or 0.0001
             gamma = gamma or 0.1
             momentum = momentum or 0.9
@@ -347,7 +345,7 @@ class Trainer:
             )
 
         elif isinstance(module, modules.DenseNet169):
-            # Same as DenseNet121 but handles the deeper network fine
+            # DenseNet169 uses same optimization as DenseNet121
             decay = decay or 0.0001
             gamma = gamma or 0.1
             momentum = momentum or 0.9
@@ -361,236 +359,235 @@ class Trainer:
             )
 
         else:
-            logger.error(f"Don't know how to train {type(module)} - not supported yet")
-            raise ValueError(f"Don't know how to train {type(module)} - not supported yet")
+            logger.error(f"Unsupported model type: {type(module)}")
+            raise ValueError(f"Training configuration not available for: {type(module)}")
 
-        # Store optimizer and scheduler for training
+        # Store optimization components
         self.optimizer = optimizer
         self.scheduler = scheduler
 
         logger.info(
-            f"Set up {module.__class__.__name__} with "
+            f"Optimization configured for {module.__class__.__name__}: "
             f"decay={decay}, gamma={gamma}, momentum={momentum}, lr={lr}"
         )
 
     @staticmethod
     def seed(seed: int) -> None:
         """
-        Set random seeds everywhere so you get the same results every time.
+        Configure deterministic random state across all libraries.
 
-        This is really important if you want to be able to reproduce your experiments
-        or compare different approaches fairly. It sets the seed for Python's random
-        module, NumPy, PyTorch, and GPU operations.
+        Ensures reproducible results by setting random seeds for Python's
+        random module, NumPy, PyTorch CPU and GPU operations, and configuring
+        deterministic CUDA behavior.
 
         Args:
-            seed: The number to use as the random seed
+            seed: Integer value for random seed initialization
 
         Returns:
             None
         """
         try:
-            # Set Python's hash randomization
+            # Configure Python hash randomization
             os.environ["PYTHONHASHSEED"] = str(seed)
-            logger.info("Configured Python hash randomization")
+            logger.info("Python hash randomization configured")
 
-            # Set seeds for all the random number generators
-            torch.manual_seed(seed=seed)  # PyTorch CPU stuff
-            random.seed(a=seed)  # Python's built-in random
-            np.random.seed(seed=seed)  # NumPy random numbers
-            logger.info("Set all random seeds")
+            # Set random seeds for all generators
+            torch.manual_seed(seed=seed)  # PyTorch CPU operations
+            random.seed(a=seed)  # Python built-in random module
+            np.random.seed(seed=seed)  # NumPy random operations
+            logger.info("Random seeds applied to all generators")
 
-            # If we're using GPU, set those seeds too
+            # Configure GPU determinism if CUDA available
             if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(seed=seed)  # All GPU devices
-                # Make everything deterministic (slower but reproducible)
+                torch.cuda.manual_seed_all(seed=seed)  # All CUDA devices
+                # Enable deterministic operations (performance impact)
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
-                logger.info("Made GPU operations deterministic")
+                logger.info("GPU operations configured for determinism")
 
-            logger.info(f"Successfully set random seed to {seed}")
+            logger.info(f"Deterministic random state established: seed={seed}")
         except Exception as error:
-            logger.error(f"Couldn't set seed: {str(error)}")
-            warnings.warn(f"Couldn't set seed: {str(error)}")
+            logger.error(f"Random seed configuration failed: {str(error)}")
+            warnings.warn(f"Unable to set random seed: {str(error)}")
 
     def loader(self, dirpath, batch):
         """
-        Create a DataLoader that handles loading and preprocessing images efficiently.
+        Create DataLoader with preprocessing pipeline and performance optimization.
 
-        This sets up the pipeline that loads images, resizes them, converts them to
-        tensors, and normalizes them. It also uses multiple CPU cores to load data
-        in parallel so your GPU doesn't have to wait around.
+        Configures image preprocessing (resize, tensor conversion, normalization)
+        and DataLoader with multi-process loading for efficient GPU utilization.
 
         Args:
-            dirpath: Path to the folder with images
-            batch: How many images to load at once
+            dirpath: Directory path containing image dataset
+            batch: Batch size for data loading
 
         Returns:
-            DataLoader that yields batches of preprocessed images, or None if it fails
+            Configured DataLoader instance, or None if creation fails
         """
-        # Set up image preprocessing - resize, convert to tensor, normalize
+        # Configure image preprocessing pipeline
         transform = transforms.Compose([
-            transforms.Resize(size=self.dimensions),  # Make all images the same size
-            transforms.ToTensor(),  # Convert to PyTorch tensor
+            transforms.Resize(size=self.dimensions),  # Standardize image dimensions
+            transforms.ToTensor(),  # Convert to PyTorch tensor format
             transforms.Normalize(mean=[0.5], std=[0.5]),  # Normalize to [-1, 1] range
         ])
-        logger.info("Set up image preprocessing pipeline")
+        logger.info("Image preprocessing pipeline configured")
 
         try:
-            # Create the dataset with transformations
+            # Initialize dataset with transforms
             dataset = DatasetLoader(dirpath=dirpath, transform=transform)
-            logger.info(f"Created dataset from {dirpath}")
+            logger.info(f"Dataset created from: {dirpath}")
 
-            # Create DataLoader with performance optimizations
+            # Configure DataLoader with performance optimizations
             dataloader = DataLoader(
                 dataset=dataset,
                 batch_size=batch,
-                shuffle=True,  # Randomize order so model doesn't memorize sequence
+                shuffle=True,  # Randomize sample order each epoch
                 num_workers=(2 if self.workers is None else self.workers),  # Parallel loading
-                pin_memory=True,  # Faster GPU transfers
+                pin_memory=True,  # Accelerate GPU memory transfers
             )
             logger.info(
-                f"Created DataLoader with batch_size={batch}, "
+                f"DataLoader configured: batch_size={batch}, "
                 f"workers={2 if self.workers is None else self.workers}"
             )
             return dataloader
 
         except Exception as error:
-            logger.error(f"Couldn't load data: {str(error)}")
-            warnings.warn(f"Couldn't load data: {str(error)}")
+            logger.error(f"DataLoader creation failed: {str(error)}")
+            warnings.warn(f"Data loading error: {str(error)}")
             return None
 
     async def rehearse(self, dataloader, mode):
         """
-        Run one epoch of training or validation.
+        Execute single epoch of training or evaluation.
 
-        This goes through all the data once, either training the model (updating weights)
-        or just evaluating it (validation/testing). It includes gradient clipping during
-        training to prevent the gradients from getting too big and messing up training.
+        Processes all batches in the dataloader, performing forward passes and
+        optionally backward passes (training only). Includes gradient clipping
+        during training to prevent gradient explosion.
 
         Args:
-            dataloader: The DataLoader with batched data
-            mode: Either "training" or "validation"
+            dataloader: DataLoader containing batched dataset
+            mode: Training mode - either "training" or "validation"
 
         Returns:
-            The average loss for this epoch
+            Average loss value for the epoch
         """
-        # Set model to training or evaluation mode
+        # Configure model state based on mode
         self.module.train() if mode == "training" else self.module.eval()
         total_loss = np.float64(0.0)
-        logger.info(f"Starting {mode} epoch with {len(dataloader)} batches")
+        logger.info(f"Beginning {mode} epoch: {len(dataloader)} batches")
 
-        # Process all batches with a progress bar
+        # Process all batches with progress tracking
         async with Bar(iterations=len(dataloader), title=mode, steps=20) as bar:
             time = asyncio.get_event_loop().time()
 
             for batch, (inputs, targets) in enumerate(dataloader, start=1):
-                # Make sure we actually got tensors
+                # Validate tensor inputs
                 if not isinstance(inputs, torch.Tensor):
-                    logger.warning("Inputs should be tensors")
-                    warnings.warn("Inputs should be tensors.")
+                    logger.warning("Non-tensor inputs detected")
+                    warnings.warn("Expected tensor inputs for processing")
                     continue
 
                 try:
-                    # Move data to GPU/CPU
+                    # Transfer data to compute device
                     inputs = inputs.to(self.device)
                     targets = targets.to(self.device)
-                    self.optimizer.zero_grad()  # Clear old gradients
+                    self.optimizer.zero_grad()  # Clear accumulated gradients
 
-                    # Only compute gradients during training
+                    # Compute forward pass with conditional gradient computation
                     with torch.set_grad_enabled(mode == "training"):
-                        outputs = self.module(inputs)  # Forward pass
-                        loss = self.criterion(outputs, targets)  # Calculate loss
+                        outputs = self.module(inputs)  # Model inference
+                        loss = self.criterion(outputs, targets)  # Loss calculation
 
-                        # Check if loss is NaN (usually means something's wrong)
+                        # Detect numerical instability
                         if torch.isnan(loss):
-                            logger.warning("Got NaN loss! Something might be wrong with your data or model")
-                            warnings.warn("Got NaN loss! Check your data and model.")
+                            logger.warning("NaN loss detected - possible numerical instability")
+                            warnings.warn("NaN loss indicates potential data or model issues")
                             continue
 
-                        # During training, compute gradients and update weights
+                        # Execute backward pass during training
                         if mode == "training":
                             try:
-                                loss.backward()  # Compute gradients
-                                # Clip gradients to prevent them from getting too big
+                                loss.backward()  # Gradient computation
+                                # Apply gradient clipping to prevent explosion
                                 torch.nn.utils.clip_grad_norm_(
                                     parameters=self.module.parameters(), max_norm=1.0
                                 )
-                                self.optimizer.step()  # Update model weights
+                                self.optimizer.step()  # Parameter update
                             except Exception as error:
-                                logger.error(f"Problem with backward pass: {str(error)}")
-                                warnings.warn(f"Problem with backward pass: {str(error)}")
+                                logger.error(f"Backward pass failed: {str(error)}")
+                                warnings.warn(f"Gradient computation error: {str(error)}")
 
-                    # Add up the loss (weighted by batch size)
+                    # Accumulate batch loss weighted by batch size
                     total_loss = np.add(
                         total_loss,
                         np.multiply(np.float64(loss.item()), np.float64(inputs.size(0))),
                     )
 
-                    # Update progress bar
+                    # Update progress display
                     await bar.update(batch=batch, time=time)
                     await bar.postfix(loss=np.divide(total_loss, batch))
 
                 except Exception as error:
-                    logger.error(f"Problem with batch {batch}: {str(error)}")
-                    warnings.warn(f"Problem processing batch: {str(error)}")
+                    logger.error(f"Batch processing error {batch}: {str(error)}")
+                    warnings.warn(f"Batch {batch} processing failed: {str(error)}")
                     continue
 
-            # Calculate average loss for this epoch
+            # Calculate epoch average loss
             average_loss = np.divide(total_loss, np.float64(len(dataloader)))
-            logger.info(f"{mode.capitalize()} epoch done, average loss: {average_loss:.4f}")
+            logger.info(f"{mode.capitalize()} epoch completed - average loss: {average_loss:.4f}")
             return average_loss
 
     async def train(self):
         """
-        Run the complete training process for all epochs.
+        Execute complete training process across all epochs.
 
-        This handles the main training loop - it runs training and validation for each
-        epoch, watches for overfitting (when validation loss goes up while training loss
-        goes down), adjusts the learning rate, and saves checkpoints when needed.
+        Manages the full training loop including training and validation phases,
+        overfitting detection, learning rate scheduling, and checkpoint creation
+        when potential overfitting is detected.
 
         Returns:
             None
         """
-        logger.info(f"Starting training for {self.epochs} epochs")
+        logger.info(f"Training initiation: {self.epochs} epochs scheduled")
 
         for epoch in range(self.epochs):
             try:
-                logger.info(f"Epoch {epoch + 1}/{self.epochs}")
+                logger.info(f"Epoch progression: {epoch + 1}/{self.epochs}")
                 print(f"Epoch {epoch + 1}/{self.epochs}")
 
-                # Run both training and validation
+                # Execute training and validation phases
                 for mode, dataloader in [
                     ("training", self.training_dataset),
                     ("validation", self.validation_dataset)
                 ]:
                     loss = await self.rehearse(dataloader=dataloader, mode=mode)
 
-                    # Log the results
-                    logger.info(f"Epoch {epoch + 1}/{self.epochs}, {mode.capitalize()} Loss: {loss:.4f}")
+                    # Record epoch results
+                    logger.info(f"Epoch {epoch + 1}/{self.epochs} - {mode.capitalize()} Loss: {loss:.4f}")
 
-                    # Save loss for overfitting detection
+                    # Store loss values for overfitting analysis
                     self.cache[mode].append(loss)
 
-                # Check for overfitting after the first epoch
+                # Analyze for overfitting after initial epoch
                 if np.greater(epoch, 0):
                     if (
                             self.cache["validation"][-1] > self.cache["validation"][-2]
                             and self.cache["training"][-1] < self.cache["training"][-2]
                     ):
-                        logger.warning(f"Looks like overfitting at epoch {epoch + 1}")
+                        logger.warning(f"Potential overfitting detected at epoch {epoch + 1}")
                         warnings.warn(
-                            f"Possible overfitting at epoch {epoch + 1}: "
-                            f"validation loss went up while training loss went down."
+                            f"Overfitting indication at epoch {epoch + 1}: "
+                            f"validation loss increased while training loss decreased"
                         )
-                        # Save a checkpoint in case we want to go back
+                        # Create checkpoint for potential rollback
                         checkpoint_path = Path(f"checkpoints/checkpoint-{epoch + 1}.pth")
                         self.save(filepath=checkpoint_path)
 
-                # Update the learning rate based on the scheduler type
-                scheduler = type(self.scheduler)
-                if scheduler == torch.optim.lr_scheduler.ReduceLROnPlateau:
+                # Update learning rate based on scheduler configuration
+                scheduler_type = type(self.scheduler)
+                if scheduler_type == torch.optim.lr_scheduler.ReduceLROnPlateau:
                     self.scheduler.step(epoch)
-                elif scheduler in [
+                elif scheduler_type in [
                     torch.optim.lr_scheduler.CosineAnnealingLR,
                     torch.optim.lr_scheduler.StepLR,
                     torch.optim.lr_scheduler.MultiStepLR,
@@ -599,32 +596,32 @@ class Trainer:
                     self.optimizer.step()
                     self.scheduler.step()
 
-                # Show current learning rate
-                lr = self.optimizer.param_groups[0]["lr"]
-                logger.info(f"Learning rate is now: {lr:.6f}")
+                # Log current learning rate
+                current_lr = self.optimizer.param_groups[0]["lr"]
+                logger.info(f"Learning rate updated: {current_lr:.6f}")
 
             except Exception as error:
-                logger.error(f"Problem in epoch {epoch + 1}: {str(error)}")
-                warnings.warn(f"Problem in epoch {epoch + 1}: {str(error)}")
+                logger.error(f"Epoch {epoch + 1} execution failed: {str(error)}")
+                warnings.warn(f"Epoch {epoch + 1} error: {str(error)}")
                 continue
 
-        logger.info("Training finished!")
+        logger.info("Training process completed successfully")
 
     async def test(self):
         """
-        Test the trained model on the test set to see how well it actually performs.
+        Evaluate trained model performance on test dataset.
 
-        This runs the model on data it has never seen before to get an honest measure
-        of how good it is. It calculates both the loss and accuracy.
+        Executes inference on test data to measure model generalization
+        capability. Calculates both loss and classification accuracy metrics.
 
         Returns:
             None
         """
-        # Set model to evaluation mode (no gradient computation)
+        # Configure model for evaluation mode
         self.module.eval()
         total_loss = np.float64(0.0)
 
-        # Track predictions to calculate accuracy
+        # Initialize prediction tracking for accuracy calculation
         all_predictions = np.array([], dtype=np.int64)
         all_targets = np.array([], dtype=np.int64)
 
@@ -633,85 +630,84 @@ class Trainer:
 
             for batch, (inputs, targets) in enumerate(self.testing_dataset, start=1):
                 try:
-                    # Make sure we got tensors
+                    # Validate input tensor types
                     if not isinstance(inputs, torch.Tensor) or not isinstance(targets, torch.Tensor):
                         warnings.warn(
-                            f"Skipping batch: expected tensors but got {type(inputs)}/{type(targets)}"
+                            f"Batch {batch} skipped: expected tensors, got {type(inputs)}/{type(targets)}"
                         )
                         continue
 
-                    # Move to GPU/CPU
+                    # Transfer to compute device
                     inputs = inputs.to(device=self.device)
                     targets = targets.to(device=self.device)
 
-                    # Run inference without computing gradients
+                    # Execute inference without gradient computation
                     with torch.no_grad():
                         outputs = self.module(inputs)
                         loss = self.criterion(outputs, targets)
 
-                        # Add up loss
+                        # Accumulate loss values
                         total_loss = np.add(
                             total_loss,
                             np.multiply(np.float64(loss.item()), np.float64(inputs.size(0))),
                         )
 
-                        # Get predictions for accuracy
-                        _, prediction = torch.max(outputs, 1)  # Get the class with highest score
+                        # Extract predictions for accuracy computation
+                        _, prediction = torch.max(outputs, 1)  # Get highest confidence class
                         all_predictions = np.concatenate(
                             (all_predictions, prediction.cpu().numpy()), axis=0
                         )
                         all_targets = np.concatenate((all_targets, targets.cpu().numpy()), axis=0)
 
-                    # Update progress bar
+                    # Update progress tracking
                     await bar.update(batch, time)
                     await bar.postfix(loss=np.divide(total_loss, batch))
 
                 except Exception as error:
-                    warnings.warn(f"Problem with test batch {batch}: {str(error)}")
+                    warnings.warn(f"Test batch {batch} processing failed: {str(error)}")
                     continue
 
-        # Calculate final metrics
+        # Compute final performance metrics
         accuracy = np.multiply(
             np.divide(np.sum((all_predictions == all_targets)), np.size(all_predictions)),
             np.float64(100)
         )
         average_loss = np.divide(total_loss, len(self.testing_dataset))
 
-        # Show results
-        print(f"Test Loss: {average_loss:.4f}, Accuracy: {accuracy:.2f}%")
-        logger.info(f"Test Loss: {average_loss:.4f}, Accuracy: {accuracy:.2f}%")
+        # Display test results
+        print(f"Test Results - Loss: {average_loss:.4f}, Accuracy: {accuracy:.2f}%")
+        logger.info(f"Test evaluation completed - Loss: {average_loss:.4f}, Accuracy: {accuracy:.2f}%")
 
     def save(self, filepath=None):
         """
-        Save the trained model to disk.
+        Persist trained model to storage.
 
-        For .pth files, it saves just the model weights (recommended because it's more
-        flexible). For other file types, it saves the entire model including the
-        architecture.
+        Saves model weights (.pth files) or complete model architecture based on
+        file extension. Creates necessary directories if they don't exist.
 
         Args:
-            filepath: Where to save the model (optional)
+            filepath: Target save location (uses default if None)
 
         Returns:
             None
         """
 
         if not filepath:
-            # Use default location if none provided
+            # Use default save location
             parent = Path(__file__).parent
             filepath = Path(parent, "module.pt")
         else:
-            # Make sure the directory exists
+            # Ensure target directory exists
             filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        # Choose save format based on file extension
+        # Select save format based on file extension
         if filepath.suffix == ".pth":
-            # Save just the weights (preferred method)
+            # Save state dictionary (weights only - recommended)
             torch.save(obj=self.module.state_dict(), f=filepath)
-            print(f"Saved model weights to: {filepath}")
-            logger.info(f"Saved model weights to: {filepath}")
+            print(f"Model weights saved: {filepath}")
+            logger.info(f"Model state dictionary saved: {filepath}")
         else:
-            # Save the whole model
+            # Save complete model including architecture
             torch.save(obj=self.module, f=filepath)
-            print(f"Saved complete model to: {filepath}")
-            logger.info(f"Saved complete model to: {filepath}")
+            print(f"Complete model saved: {filepath}")
+            logger.info(f"Full model architecture saved: {filepath}")
