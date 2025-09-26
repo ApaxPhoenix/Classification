@@ -2,49 +2,84 @@ import torch
 import torch.nn as nn
 from torchvision import models as modules
 import logging
-import warnings
 
-# Handlers are configured in main file
+# Get our logger from the main app
 logger = logging.getLogger("modules")
 
+class AlexNet(nn.Module):
+    """
+    The classic AlexNet that started the deep learning revolution.
 
-class FCN_ResNet50(nn.Module):
-    """FCN with ResNet50 backbone for semantic segmentation.
-
-    Fully Convolutional Network that replaces final FC layers with convolutions
-    to preserve spatial information. Uses skip connections from intermediate
-    layers for better boundary delineation and detail recovery.
+    This is the model that won ImageNet in 2012 and basically kicked off
+    the whole deep learning craze. It's pretty old-school now but still
+    works well for basic classification tasks. Uses big kernels and
+    aggressive pooling to process images efficiently.
 
     Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights (bool): Whether to load pretrained COCO weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
+        classes: How many different things you want to classify
+        channels: Input channels (3 for RGB, 1 for grayscale)
+        weights: Start with ImageNet pretrained weights? (Usually yes)
     """
 
     def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
         super().__init__()
 
-        logger.info(
-            f"Initializing FCN ResNet50: {classes} classes, {channels} channels"
+        logger.info(f"Setting up AlexNet for {classes} classes with {channels} input channels")
+
+        # Load the base AlexNet model
+        self.module = modules.alexnet(
+            weights=modules.AlexNet_Weights.DEFAULT if weights else None
         )
 
-        # Load base model with optional pretrained weights
-        self.module = modules.segmentation.fcn_resnet50(
-            weights=(
-                modules.segmentation.FCN_ResNet50_Weights.DEFAULT if weights else None
-            ),
-            classes=classes,
-        )
-
-        # Modify input layer for non-RGB images (grayscale, multispectral, etc.)
+        # If we're not using standard RGB images, change the first layer
         if channels != 3:
-            self.module.backbone.conv1 = nn.Conv2d(
+            self.module.features[0] = nn.Conv2d(
+                in_channels=channels,
+                out_channels=64,
+                kernel_size=11,
+                stride=4,
+                padding=2,
+            )
+
+        # Replace the final layer to match our number of classes
+        features = self.module.classifier[6].in_features
+        self.module.classifier[6] = nn.Linear(
+            in_features=features, out_features=classes
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the model on some input images."""
+        return self.module(x)
+
+
+class ResNet50(nn.Module):
+    """
+    ResNet-50: The workhorse of computer vision.
+
+    This 50-layer network uses residual connections (skip connections) to
+    avoid the vanishing gradient problem. It's probably the most popular
+    architecture for image classification and works great as a feature
+    extractor for other tasks too.
+
+    Args:
+        classes: Number of classes to classify
+        channels: Input image channels (usually 3)
+        weights: Use ImageNet pretrained weights?
+    """
+
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
+        super().__init__()
+
+        logger.info(f"Setting up ResNet-50 for {classes} classes with {channels} input channels")
+
+        # Load ResNet-50 with optional pretrained weights
+        self.module = modules.resnet50(
+            weights=modules.ResNet50_Weights.DEFAULT if weights else None
+        )
+
+        # Modify the first layer if needed
+        if channels != 3:
+            self.module.conv1 = nn.Conv2d(
                 in_channels=channels,
                 out_channels=64,
                 kernel_size=7,
@@ -53,57 +88,42 @@ class FCN_ResNet50(nn.Module):
                 bias=False,
             )
 
+        # Update the final classification layer
+        features = self.module.fc.in_features  # Should be 2048
+        self.module.fc = nn.Linear(in_features=features, out_features=classes)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through FCN network.
-
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        # Extract main output from torchvision FCN (ignores auxiliary output)
-        output = self.module(x)
-        return output["out"]
+        """Run ResNet-50 forward pass."""
+        return self.module(x)
 
 
-class FCN_ResNet101(nn.Module):
-    """FCN with ResNet101 backbone for semantic segmentation.
+class ResNet18(nn.Module):
+    """
+    ResNet-18: The lightweight cousin of ResNet-50.
 
-    Deeper variant of FCN_ResNet50 with better feature extraction capability.
-    Higher computational cost but improved accuracy on complex scenes with
-    fine-grained details and multiple object scales.
+    Same idea as ResNet-50 but with only 18 layers, so it's faster to train
+    and uses less memory. Perfect when you don't have huge datasets or
+    powerful hardware. Still uses residual connections for stable training.
 
     Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights (bool): Whether to load pretrained COCO weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
+        classes: Number of output classes
+        channels: Input channels (3 for RGB)
+        weights: Use pretrained weights?
     """
 
     def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
         super().__init__()
 
-        logger.info(
-            f"Initializing FCN ResNet101: {classes} classes, {channels} channels"
+        logger.info(f"Setting up ResNet-18 for {classes} classes with {channels} input channels")
+
+        # Load the lighter ResNet variant
+        self.module = modules.resnet18(
+            weights=modules.ResNet18_Weights.DEFAULT if weights else None
         )
 
-        # Load deeper ResNet101 backbone for enhanced feature extraction
-        self.module = modules.segmentation.fcn_resnet101(
-            weights=(
-                modules.segmentation.FCN_ResNet101_Weights.DEFAULT if weights else None
-            ),
-            classes=classes,
-        )
-
-        # Modify input layer for non-RGB images
+        # Handle non-RGB inputs
         if channels != 3:
-            self.module.backbone.conv1 = nn.Conv2d(
+            self.module.conv1 = nn.Conv2d(
                 in_channels=channels,
                 out_channels=64,
                 kernel_size=7,
@@ -112,179 +132,43 @@ class FCN_ResNet101(nn.Module):
                 bias=False,
             )
 
+        # Fix the final layer for our classes
+        features = self.module.fc.in_features  # Should be 512
+        self.module.fc = nn.Linear(in_features=features, out_features=classes)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through FCN ResNet101 network.
-
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        output = self.module(x)
-        return output["out"]
+        """Run ResNet-18 forward pass."""
+        return self.module(x)
 
 
-class DeepLabV3_ResNet50(nn.Module):
-    """DeepLabV3 with ResNet50 backbone for semantic segmentation.
+class MobileNetLarge(nn.Module):
+    """
+    MobileNet-V3 Large: Great for mobile and edge devices.
 
-    Advanced segmentation model using Atrous Spatial Pyramid Pooling (ASPP)
-    to capture multi-scale context. Excellent for scenes with objects at
-    different scales and complex spatial relationships.
+    Uses depthwise separable convolutions to be super efficient while
+    still getting good accuracy. Has squeeze-and-excitation blocks and
+    hard-swish activations. Perfect when you need to run on phones or
+    embedded devices.
 
     Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights (bool): Whether to load pretrained COCO weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
+        classes: Number of classes to predict
+        channels: Input image channels
+        weights: Use pretrained weights?
     """
 
     def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
         super().__init__()
 
-        logger.info(
-            f"Initializing DeepLabV3 ResNet50: {classes} classes, {channels} channels"
+        logger.info(f"Setting up MobileNet-V3 Large for {classes} classes with {channels} input channels")
+
+        # Load the mobile-optimized model
+        self.module = modules.mobilenet_v3_large(
+            weights=modules.MobileNet_V3_Large_Weights.DEFAULT if weights else None
         )
 
-        # Load model with ASPP for multi-scale feature extraction
-        self.module = modules.segmentation.deeplabv3_resnet50(
-            weights=(
-                modules.segmentation.DeepLabV3_ResNet50_Weights.DEFAULT
-                if weights
-                else None
-            ),
-            classes=classes,
-        )
-
-        # Modify input layer for non-RGB images
+        # Adjust first layer if needed
         if channels != 3:
-            self.module.backbone.conv1 = nn.Conv2d(
-                in_channels=channels,
-                out_channels=64,
-                kernel_size=7,
-                stride=2,
-                padding=3,
-                bias=False,
-            )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through DeepLabV3 network.
-
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        output = self.module(x)
-        return output["out"]
-
-
-class DeepLabV3_ResNet101(nn.Module):
-    """DeepLabV3 with ResNet101 backbone for semantic segmentation.
-
-    Premium segmentation model combining DeepLabV3's ASPP architecture with
-    deeper ResNet101 backbone. Best accuracy for complex segmentation tasks
-    where computational cost is less critical than precision.
-
-    Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights (bool): Whether to load pretrained COCO weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
-    """
-
-    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
-        super().__init__()
-
-        logger.info(
-            f"Initializing DeepLabV3 ResNet101: {classes} classes, {channels} channels"
-        )
-
-        # Load deepest variant for maximum feature extraction capability
-        self.module = modules.segmentation.deeplabv3_resnet101(
-            weights=(
-                modules.segmentation.DeepLabV3_ResNet101_Weights.DEFAULT
-                if weights
-                else None
-            ),
-            classes=classes,
-        )
-
-        # Modify input layer for non-RGB images
-        if channels != 3:
-            self.module.backbone.conv1 = nn.Conv2d(
-                in_channels=channels,
-                out_channels=64,
-                kernel_size=7,
-                stride=2,
-                padding=3,
-                bias=False,
-            )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through DeepLabV3 ResNet101 network.
-
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        output = self.module(x)
-        return output["out"]
-
-
-class DeepLabV3_MobileNetV3Large(nn.Module):
-    """DeepLabV3 with MobileNetV3-Large backbone for semantic segmentation.
-
-    Mobile-optimized segmentation model using depthwise separable convolutions.
-    Excellent balance between accuracy and efficiency for deployment on
-    resource-constrained devices while maintaining ASPP benefits.
-
-    Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights (bool): Whether to load pretrained COCO weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
-    """
-
-    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
-        super().__init__()
-
-        logger.info(
-            f"Initializing DeepLabV3 MobileNetV3-Large: {classes} classes, {channels} channels"
-        )
-
-        # Load mobile-optimized model with depthwise separable convolutions
-        self.module = modules.segmentation.deeplabv3_mobilenet_v3_large(
-            weights=(
-                modules.segmentation.DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
-                if weights
-                else None
-            ),
-            classes=classes,
-        )
-
-        # Modify input layer for non-RGB images
-        # MobileNet architecture has different first layer structure
-        if channels != 3:
-            self.module.backbone.features[0][0] = nn.Conv2d(
+            self.module.features[0][0] = nn.Conv2d(
                 in_channels=channels,
                 out_channels=16,
                 kernel_size=3,
@@ -293,58 +177,44 @@ class DeepLabV3_MobileNetV3Large(nn.Module):
                 bias=False,
             )
 
+        # Update the classifier
+        features = self.module.classifier[-1].in_features
+        self.module.classifier[-1] = nn.Linear(
+            in_features=features, out_features=classes
+        )
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through DeepLabV3 MobileNetV3 network.
-
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        output = self.module(x)
-        return output["out"]
+        """Run MobileNet-V3 Large forward pass."""
+        return self.module(x)
 
 
-class LRASPP_MobileNetV3Large(nn.Module):
-    """LRASPP with MobileNetV3-Large backbone for semantic segmentation.
+class MobileNetSmall(nn.Module):
+    """
+    MobileNet-V3 Small: Even more compact for ultra-low power.
 
-    Lightweight Real-time Semantic Segmentation model optimized for mobile
-    deployment. Simplified ASPP with only global pooling and 1x1 convolutions
-    for fastest inference while maintaining reasonable accuracy.
+    This is the smallest MobileNet variant - designed for when you really
+    need to squeeze every bit of efficiency out. Great for real-time
+    applications on very limited hardware.
 
     Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights (bool): Whether to load pretrained COCO weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
+        classes: Number of output classes
+        channels: Input channels (usually 3)
+        weights: Use pretrained weights?
     """
 
     def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
         super().__init__()
 
-        logger.info(
-            f"Initializing LRASPP MobileNetV3-Large: {classes} classes, {channels} channels"
+        logger.info(f"Setting up MobileNet-V3 Small for {classes} classes with {channels} input channels")
+
+        # Load the most compact variant
+        self.module = modules.mobilenet_v3_small(
+            weights=modules.MobileNet_V3_Small_Weights.DEFAULT if weights else None
         )
 
-        # Load fastest segmentation model for real-time applications
-        self.module = modules.segmentation.lraspp_mobilenet_v3_large(
-            weights=(
-                modules.segmentation.LRASPP_MobileNet_V3_Large_Weights.DEFAULT
-                if weights
-                else None
-            ),
-            classes=classes,
-        )
-
-        # Modify input layer for non-RGB images
+        # Handle custom input channels
         if channels != 3:
-            self.module.backbone.features[0][0] = nn.Conv2d(
+            self.module.features[0][0] = nn.Conv2d(
                 in_channels=channels,
                 out_channels=16,
                 kernel_size=3,
@@ -353,316 +223,283 @@ class LRASPP_MobileNetV3Large(nn.Module):
                 bias=False,
             )
 
+        # Fix the final classifier
+        features = self.module.classifier[-1].in_features
+        self.module.classifier[-1] = nn.Linear(
+            in_features=features, out_features=classes
+        )
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through LRASPP network.
+        """Run MobileNet-V3 Small forward pass."""
+        return self.module(x)
 
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
 
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        output = self.module(x)
-        return output["out"]
+class VGG11(nn.Module):
+    """
+    VGG-11: Simple and straightforward CNN architecture.
 
-class UNet(nn.Module):
-    """U-Net architecture for semantic segmentation.
-
-    Classic encoder-decoder with symmetric skip connections for precise
-    localization. Excellent for biomedical imaging and tasks requiring
-    fine boundary delineation. Works well with limited training data.
+    The simplest VGG model with just 11 layers. Uses small 3x3 convolutions
+    throughout and has a very straightforward design. Good for learning
+    how CNNs work since it's so simple to understand.
 
     Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        base (int): Base number of feature channels (doubles each level)
-        weights (bool): Ignored - custom implementation without pretrained weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-        Note: Height and width should be divisible by 16
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
+        classes: Number of classes to classify
+        channels: Input image channels
+        weights: Use pretrained ImageNet weights?
     """
 
-    def __init__(self, classes: int, channels: int = 3, base: int = 64, weights: bool = None) -> None:
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
         super().__init__()
 
-        if weights is not None:
-            warnings.warn(
-                "This module is from barebones and does not include pretrained weights. "
-                "The 'weights' parameter will be ignored."
+        logger.info(f"Setting up VGG-11 for {classes} classes with {channels} input channels")
+
+        # Load the simplest VGG variant
+        self.module = modules.vgg11(
+            weights=modules.VGG11_Weights.DEFAULT if weights else None
+        )
+
+        # Modify first layer for different input channels
+        if channels != 3:
+            self.module.features[0] = nn.Conv2d(
+                in_channels=channels,
+                out_channels=64,
+                kernel_size=3,
+                padding=1
             )
-            logger.warning(
-                "This module is from barebones and does not include pretrained weights. "
-                "The 'weights' parameter will be ignored."
-            )
 
-        logger.info(
-            f"Initializing U-Net: {classes} classes, {channels} channels, {base} base filters"
+        # Update the final classifier
+        features = self.module.classifier[-1].in_features
+        self.module.classifier[-1] = nn.Linear(
+            in_features=features, out_features=classes
         )
-
-        # Encoder blocks - progressive downsampling with feature extraction
-        self.enc1 = nn.Sequential(
-            nn.Conv2d(channels, base, 3, padding=1),
-            nn.BatchNorm2d(base),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base, base, 3, padding=1),
-            nn.BatchNorm2d(base),
-            nn.ReLU(inplace=True),
-        )
-
-        self.enc2 = nn.Sequential(
-            nn.Conv2d(base, base * 2, 3, padding=1),
-            nn.BatchNorm2d(base * 2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 2, base * 2, 3, padding=1),
-            nn.BatchNorm2d(base * 2),
-            nn.ReLU(inplace=True),
-        )
-
-        self.enc3 = nn.Sequential(
-            nn.Conv2d(base * 2, base * 4, 3, padding=1),
-            nn.BatchNorm2d(base * 4),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 4, base * 4, 3, padding=1),
-            nn.BatchNorm2d(base * 4),
-            nn.ReLU(inplace=True),
-        )
-
-        self.enc4 = nn.Sequential(
-            nn.Conv2d(base * 4, base * 8, 3, padding=1),
-            nn.BatchNorm2d(base * 8),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 8, base * 8, 3, padding=1),
-            nn.BatchNorm2d(base * 8),
-            nn.ReLU(inplace=True),
-        )
-
-        # Bottleneck - deepest feature representation
-        self.bottleneck = nn.Sequential(
-            nn.Conv2d(base * 8, base * 16, 3, padding=1),
-            nn.BatchNorm2d(base * 16),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 16, base * 16, 3, padding=1),
-            nn.BatchNorm2d(base * 16),
-            nn.ReLU(inplace=True),
-        )
-
-        # Decoder upsampling layers
-        self.upconv4 = nn.ConvTranspose2d(base * 16, base * 8, 2, stride=2)
-        self.dec4 = nn.Sequential(
-            nn.Conv2d(base * 16, base * 8, 3, padding=1),
-            nn.BatchNorm2d(base * 8),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 8, base * 8, 3, padding=1),
-            nn.BatchNorm2d(base * 8),
-            nn.ReLU(inplace=True),
-        )
-
-        self.upconv3 = nn.ConvTranspose2d(base * 8, base * 4, 2, stride=2)
-        self.dec3 = nn.Sequential(
-            nn.Conv2d(base * 8, base * 4, 3, padding=1),
-            nn.BatchNorm2d(base * 4),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 4, base * 4, 3, padding=1),
-            nn.BatchNorm2d(base * 4),
-            nn.ReLU(inplace=True),
-        )
-
-        self.upconv2 = nn.ConvTranspose2d(base * 4, base * 2, 2, stride=2)
-        self.dec2 = nn.Sequential(
-            nn.Conv2d(base * 4, base * 2, 3, padding=1),
-            nn.BatchNorm2d(base * 2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base * 2, base * 2, 3, padding=1),
-            nn.BatchNorm2d(base * 2),
-            nn.ReLU(inplace=True),
-        )
-
-        self.upconv1 = nn.ConvTranspose2d(base * 2, base, 2, stride=2)
-        self.dec1 = nn.Sequential(
-            nn.Conv2d(base * 2, base, 3, padding=1),
-            nn.BatchNorm2d(base),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(base, base, 3, padding=1),
-            nn.BatchNorm2d(base),
-            nn.ReLU(inplace=True),
-        )
-
-        # Final classification layer
-        self.final = nn.Conv2d(base, classes, 1)
-
-        # Pooling layer for encoder downsampling
-        self.pool = nn.MaxPool2d(2, stride=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through U-Net with skip connections.
-
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        # Encoder path with skip connection storage
-        e1 = self.enc1(x)
-        e2 = self.enc2(self.pool(e1))
-        e3 = self.enc3(self.pool(e2))
-        e4 = self.enc4(self.pool(e3))
-
-        # Bottleneck
-        b = self.bottleneck(self.pool(e4))
-
-        # Decoder path with skip connections
-        d4 = self.upconv4(b)
-        d4 = torch.cat([d4, e4], dim=1)
-        d4 = self.dec4(d4)
-
-        d3 = self.upconv3(d4)
-        d3 = torch.cat([d3, e3], dim=1)
-        d3 = self.dec3(d3)
-
-        d2 = self.upconv2(d3)
-        d2 = torch.cat([d2, e2], dim=1)
-        d2 = self.dec2(d2)
-
-        d1 = self.upconv1(d2)
-        d1 = torch.cat([d1, e1], dim=1)
-        d1 = self.dec1(d1)
-
-        return self.final(d1)
+        """Run VGG-11 forward pass."""
+        return self.module(x)
 
 
-class SegNet(nn.Module):
-    """SegNet architecture for semantic segmentation.
+class VGG16(nn.Module):
+    """
+    VGG-16: The most popular VGG variant.
 
-    Memory-efficient segmentation using max pooling indices for upsampling.
-    No skip connections - relies on stored pooling indices for spatial
-    reconstruction. Excellent for precise boundary delineation.
+    This 16-layer version is the one most people think of when they say "VGG".
+    It's deeper than VGG-11 so it can learn more complex features, but it's
+    still simple enough to understand. Uses lots of 3x3 convolutions and
+    max pooling.
 
     Args:
-        classes (int): Number of segmentation classes including background
-        channels (int): Input image channels (3 for RGB, 1 for grayscale)
-        weights: Ignored - custom implementation without pretrained weights
-
-    Input:
-        Tensor of shape (batch, channels, height, width)
-        Note: Height and width should be divisible by 8
-
-    Output:
-        Tensor of shape (batch, classes, height, width) with per-pixel predictions
+        classes: Number of output classes
+        channels: Input channels (3 for RGB)
+        weights: Use pretrained weights?
     """
 
-    def __init__(self, classes: int, channels: int = 3, weights = None) -> None:
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
         super().__init__()
 
-        if weights is not None:
-            warnings.warn(
-                "This module is from barebones and does not include pretrained weights. "
-                "The 'weights' parameter will be ignored."
+        logger.info(f"Setting up VGG-16 for {classes} classes with {channels} input channels")
+
+        # Load the classic VGG-16 model
+        self.module = modules.vgg16(
+            weights=modules.VGG16_Weights.DEFAULT if weights else None
+        )
+
+        # Handle different input channels
+        if channels != 3:
+            self.module.features[0] = nn.Conv2d(
+                in_channels=channels,
+                out_channels=64,
+                kernel_size=3,
+                padding=1
             )
-            logger.warning(
-                "This module is from barebones and does not include pretrained weights. "
-                "The 'weights' parameter will be ignored."
-            )
 
-        logger.info(
-            f"Initializing SegNet: {classes} classes, {channels} channels"
+        # Fix the final layer
+        features = self.module.classifier[-1].in_features
+        self.module.classifier[-1] = nn.Linear(
+            in_features=features, out_features=classes
         )
-
-        # Encoder blocks - VGG-style feature extraction
-        self.enc_conv1 = nn.Sequential(
-            nn.Conv2d(channels, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-        )
-
-        self.enc_conv2 = nn.Sequential(
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-        )
-
-        self.enc_conv3 = nn.Sequential(
-            nn.Conv2d(128, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-        )
-
-        # Decoder blocks - mirror encoder for upsampling
-        self.dec_conv3 = nn.Sequential(
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-        )
-
-        self.dec_conv2 = nn.Sequential(
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-        )
-
-        self.dec_conv1 = nn.Sequential(
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, classes, 3, padding=1),
-        )
-
-        # Pooling with index storage for precise upsampling
-        self.pool = nn.MaxPool2d(2, stride=2, return_indices=True)
-        self.unpool = nn.MaxUnpool2d(2, stride=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through SegNet using pooling indices.
+        """Run VGG-16 forward pass."""
+        return self.module(x)
 
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
 
-        Returns:
-            Segmentation predictions with shape (batch, classes, height, width)
-        """
-        # Encoder path with index storage
-        x1 = self.enc_conv1(x)
-        x1_pooled, idx1 = self.pool(x1)
+class EfficientNetB0(nn.Module):
+    """
+    EfficientNet-B0: The baseline of the super-efficient EfficientNet family.
 
-        x2 = self.enc_conv2(x1_pooled)
-        x2_pooled, idx2 = self.pool(x2)
+    This model figured out the perfect balance between network depth, width,
+    and input resolution. It gets amazing accuracy while being really efficient.
+    Uses compound scaling to optimize all dimensions at once.
 
-        x3 = self.enc_conv3(x2_pooled)
-        x3_pooled, idx3 = self.pool(x3)
+    Args:
+        classes: Number of classes to predict
+        channels: Input image channels
+        weights: Use pretrained weights?
+    """
 
-        # Decoder path using stored indices
-        x3_up = self.unpool(x3_pooled, idx3)
-        x3_dec = self.dec_conv3(x3_up)
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
+        super().__init__()
 
-        x2_up = self.unpool(x3_dec, idx2)
-        x2_dec = self.dec_conv2(x2_up)
+        logger.info(f"Setting up EfficientNet-B0 for {classes} classes with {channels} input channels")
 
-        x1_up = self.unpool(x2_dec, idx1)
-        output = self.dec_conv1(x1_up)
+        # Load the baseline EfficientNet model
+        self.module = modules.efficientnet_b0(
+            weights=modules.EfficientNet_B0_Weights.DEFAULT if weights else None
+        )
 
-        return output
+        # Modify stem for custom channels
+        if channels != 3:
+            self.module.features[0][0] = nn.Conv2d(
+                in_channels=channels,
+                out_channels=32,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
+
+        # Update classifier
+        features = self.module.classifier[-1].in_features
+        self.module.classifier[-1] = nn.Linear(
+            in_features=features, out_features=classes
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run EfficientNet-B0 forward pass."""
+        return self.module(x)
+
+
+class EfficientNetB3(nn.Module):
+    """
+    EfficientNet-B3: Scaled up for higher accuracy.
+
+    This is B0 but scaled up using compound scaling - it's deeper, wider,
+    and takes higher resolution inputs. More accurate than B0 but still
+    way more efficient than other models with similar performance.
+
+    Args:
+        classes: Number of output classes
+        channels: Input channels (usually 3)
+        weights: Use pretrained weights?
+    """
+
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
+        super().__init__()
+
+        logger.info(f"Setting up EfficientNet-B3 for {classes} classes with {channels} input channels")
+
+        # Load the scaled-up B3 model
+        self.module = modules.efficientnet_b3(
+            weights=modules.EfficientNet_B3_Weights.DEFAULT if weights else None
+        )
+
+        # Handle custom input channels
+        if channels != 3:
+            self.module.features[0][0] = nn.Conv2d(
+                in_channels=channels,
+                out_channels=40,  # Wider than B0 due to scaling
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
+
+        # Update final classifier
+        features = self.module.classifier[-1].in_features
+        self.module.classifier[-1] = nn.Linear(
+            in_features=features, out_features=classes
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run EfficientNet-B3 forward pass."""
+        return self.module(x)
+
+
+class DenseNet121(nn.Module):
+    """
+    DenseNet-121: Every layer connects to every other layer.
+
+    This architecture connects each layer to all the layers that come after it.
+    Sounds crazy but it actually works really well! It reuses features
+    efficiently and needs fewer parameters than you'd expect. The "121"
+    refers to the total number of layers.
+
+    Args:
+        classes: Number of classes to classify
+        channels: Input image channels
+        weights: Use pretrained ImageNet weights?
+    """
+
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
+        super().__init__()
+
+        logger.info(f"Setting up DenseNet-121 for {classes} classes with {channels} input channels")
+
+        # Load DenseNet with dense connections
+        self.module = modules.densenet121(
+            weights=modules.DenseNet121_Weights.DEFAULT if weights else None
+        )
+
+        # Handle different input channels
+        if channels != 3:
+            self.module.features.conv0 = nn.Conv2d(
+                in_channels=channels,
+                out_channels=64,
+                kernel_size=7,
+                stride=2,
+                padding=3,
+                bias=False,
+            )
+
+        # Update the classifier
+        features = self.module.classifier.in_features
+        self.module.classifier = nn.Linear(in_features=features, out_features=classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run DenseNet-121 forward pass."""
+        return self.module(x)
+
+
+class DenseNet169(nn.Module):
+    """
+    DenseNet-169: Deeper version with even more dense connections.
+
+    Same idea as DenseNet-121 but with 169 layers instead. The extra depth
+    lets it learn more complex patterns, though it takes longer to train
+    and uses more memory. Still way more parameter-efficient than other
+    models of similar depth.
+
+    Args:
+        classes: Number of output classes
+        channels: Input channels (3 for RGB)
+        weights: Use pretrained weights?
+    """
+
+    def __init__(self, classes: int, channels: int = 3, weights: bool = True) -> None:
+        super().__init__()
+
+        logger.info(f"Setting up DenseNet-169 for {classes} classes with {channels} input channels")
+
+        # Load the deeper DenseNet variant
+        self.module = modules.densenet169(
+            weights=modules.DenseNet169_Weights.DEFAULT if weights else None
+        )
+
+        # Modify first layer if needed
+        if channels != 3:
+            self.module.features.conv0 = nn.Conv2d(
+                in_channels=channels,
+                out_channels=64,
+                kernel_size=7,
+                stride=2,
+                padding=3,
+                bias=False,
+            )
+
+        # Update classifier for our classes
+        features = self.module.classifier.in_features
+        self.module.classifier = nn.Linear(in_features=features, out_features=classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run DenseNet-169 forward pass."""
+        return self.module(x)

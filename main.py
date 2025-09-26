@@ -1,14 +1,14 @@
-import torch.nn as nn
 import argparse
 import asyncio
 import logging.config
 import warnings
+import torch.nn as nn
 from pathlib import Path
 from typing import Dict, Type
 from trainer import Trainer
 import modules
 
-# Global logging configuration for all application modules
+# Set up logging to track what's happening during training
 configuration = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -16,7 +16,7 @@ configuration = {
         "standard": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
     },
     "handlers": {
-        # Main application handler
+        # Main app logs
         "main": {
             "level": "INFO",
             "formatter": "standard",
@@ -24,7 +24,7 @@ configuration = {
             "filename": "main.log",
             "mode": "w",
         },
-        # Data loading handler
+        # Data loading logs
         "loader": {
             "level": "INFO",
             "formatter": "standard",
@@ -32,7 +32,7 @@ configuration = {
             "filename": "loader.log",
             "mode": "w",
         },
-        # Module operations handler
+        # Model operation logs
         "modules": {
             "level": "INFO",
             "formatter": "standard",
@@ -40,7 +40,7 @@ configuration = {
             "filename": "modules.log",
             "mode": "w",
         },
-        # Training process handler
+        # Training process logs
         "trainer": {
             "level": "INFO",
             "formatter": "standard",
@@ -50,88 +50,87 @@ configuration = {
         },
     },
     "loggers": {
-        # Main application logger
         "main": {"handlers": ["main"], "level": "INFO", "propagate": False},
-        # Data loader logger
         "loader": {"handlers": ["loader"], "level": "INFO", "propagate": False},
-        # Modules logger
         "modules": {"handlers": ["modules"], "level": "INFO", "propagate": False},
-        # Trainer logger
         "trainer": {"handlers": ["trainer"], "level": "INFO", "propagate": False},
     },
 }
 
-# Registry of available semantic segmentation architectures
+# All the different classification models we can train
 modules: Dict[str, Type[nn.Module]] = {
-    "unet": modules.UNet,
-    "fcn_resnet50": modules.FCN_ResNet50,
-    "fcn_resnet101": modules.FCN_ResNet101,
-    "deeplabv3_resnet50": modules.DeepLabV3_ResNet50,
-    "deeplabv3_resnet101": modules.DeepLabV3_ResNet101,
-    "deeplabv3_mobilenet": modules.DeepLabV3_MobileNetV3Large,
-    "lraspp_mobilenet": modules.LRASPP_MobileNetV3Large,
-    "segnet": modules.SegNet,
+    "alexnet": modules.AlexNet,
+    "resnet50": modules.ResNet50,
+    "resnet18": modules.ResNet18,
+    "mobilenetv3large": modules.MobileNetLarge,
+    "mobilenetv3small": modules.MobileNetSmall,
+    "vgg11": modules.VGG11,
+    "vgg16": modules.VGG16,
+    "efficientnet-b0": modules.EfficientNetB0,
+    "efficientnet-b3": modules.EfficientNetB3,
+    "densenet121": modules.DenseNet121,
+    "densenet169": modules.DenseNet169,
 }
 
 if __name__ == "__main__":
-    # Initialize logging system for all components
+    # Get logging working
     logging.config.dictConfig(configuration)
     logger = logging.getLogger("main")
-    logger.info("Starting semantic segmentation training application...")
+    logger.info("Starting up the classification trainer...")
 
-    # Command-line interface setup
+    # Set up command line arguments
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Train different types of segmentation modules using PyTorch framework..."
+        description="Train classification models with PyTorch"
     )
 
-    # Model architecture selection
+    # Which model do you want to train?
     parser.add_argument(
         "-m",
         "--module",
         type=str,
         required=True,
         metavar="...",
-        help=f"Module architecture to use. Available modules: {', '.join(modules.keys())}...",
+        help=f"Pick your model. Options: {', '.join(modules.keys())}",
     )
 
-    # Pre-trained weights configuration
+    # Should we start with pretrained weights?
     parser.add_argument(
         "-w",
         "--weights",
         type=bool,
         default=True,
         metavar="...",
-        help="Whether to load pre-trained weights (Default: True)...",
+        help="Use pretrained weights? (Default: True)",
     )
 
-    # Class configuration
+    # How many classes are we trying to classify?
     parser.add_argument(
         "-c",
         "--classes",
         type=int,
         required=True,
         metavar="...",
-        help="Number of segmentation classes to predict...",
+        help="Number of different classes to classify",
     )
 
-    # Input channels configuration
+    # Image channels (RGB = 3, grayscale = 1)
     parser.add_argument(
         "-ch",
         "--channels",
         type=int,
         default=3,
         metavar="...",
-        help="Number of input channels (default: 3 for RGB images)...",
+        help="Image channels (3 for RGB, 1 for grayscale)",
     )
 
-    # Dataset path configurations
+    # Where's our data?
     parser.add_argument(
         "-tp",
         "--training-path",
         type=Path,
         required=True,
         metavar="...",
-        help="Path to training dataset directory...",
+        help="Path to your training data folder",
     )
 
     parser.add_argument(
@@ -140,65 +139,65 @@ if __name__ == "__main__":
         type=Path,
         required=True,
         metavar="...",
-        help="Path to validation dataset directory...",
+        help="Path to your validation data folder",
     )
 
     parser.add_argument(
         "-tep",
         "--testing-path",
         type=Path,
-        required=True,
+        default=None,
         metavar="...",
-        help="Path to test dataset directory...",
+        help="Path to test data (optional)",
     )
 
-    # Model weights configuration
+    # Got existing weights to load?
     parser.add_argument(
         "-wp",
         "--weights-path",
         type=Path,
         default=None,
         metavar="...",
-        help="Path to existing model weights file (optional)...",
+        help="Path to saved model weights (optional)",
     )
 
-    # Image processing parameters
+    # Image size settings
     parser.add_argument(
         "-d",
         "--dimensions",
         type=int,
         nargs=2,
-        default=(512, 512),
+        default=(64, 64),
         metavar="...",
-        help="Input image dimensions as height width...",
+        help="Image size as width height",
     )
 
-    # Training hyperparameters
+    # Training settings
     parser.add_argument(
         "-e",
         "--epochs",
         type=int,
-        default=50,
+        default=25,
         metavar="...",
-        help="Number of training epochs...",
+        help="How many epochs to train for",
     )
 
     parser.add_argument(
         "-b",
         "--batch-size",
         type=int,
-        default=16,
+        default=64,
         metavar="...",
-        help="Batch size for training...",
+        help="Batch size for training",
     )
 
     parser.add_argument(
         "-lr",
         "--learning-rate",
         type=float,
-        default=0.001,
+        default=0.0001,
         metavar="...",
-        help="Learning rate for optimization...",
+        help="Learning rate",
     )
 
     parser.add_argument(
@@ -207,7 +206,7 @@ if __name__ == "__main__":
         type=int,
         default=4,
         metavar="...",
-        help="Number of data loading workers...",
+        help="Number of data loading workers",
     )
 
     parser.add_argument(
@@ -216,88 +215,76 @@ if __name__ == "__main__":
         type=int,
         default=None,
         metavar="...",
-        help="Random seed for reproducibility...",
+        help="Random seed for reproducible results",
     )
 
-    # Advanced optimization parameters
+    # Advanced training options
     parser.add_argument(
         "-wd",
         "--weight-decay",
         type=float,
-        default=0.0005,
+        default=None,
         metavar="...",
-        help="Weight decay for the optimizer...",
+        help="Weight decay for regularization",
     )
 
     parser.add_argument(
         "-g",
         "--gamma",
         type=float,
-        default=0.1,
+        default=None,
         metavar="...",
-        help="Gamma for the learning rate scheduler...",
+        help="Learning rate scheduler gamma",
     )
 
-    # Distributed training configuration
     parser.add_argument(
-        "-p",
-        "--parallelism",
-        type=bool,
-        default=False,
+        "-mm",
+        "--momentum",
+        type=float,
+        default=None,
         metavar="...",
-        help="Enable distributed training on multiple GPUs...",
+        help="SGD momentum",
     )
 
-    # Output configuration
+    # Where to save the trained model
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=Path("model.pt"),
         metavar="...",
-        help="Path to save the trained model (default: model.pt)...",
+        help="Where to save your trained model",
     )
 
-    # Parse and validate command line arguments
+    # Parse all the arguments
     args: argparse.Namespace = parser.parse_args()
-    logger.info("Command line arguments parsed successfully...")
+    logger.info("Got all the command line arguments")
 
-    # Validate selected module architecture
+    # Make sure they picked a valid model
     if args.module not in modules:
-        available_modules: str = ", ".join(modules.keys())
-        logger.warning(
-            f"Module '{args.module}' is not implemented. Available modules: {available_modules}..."
-        )
-        warnings.warn(
-            f"Module '{args.module}' is not implemented. Available modules: {available_modules}...",
-            UserWarning,
-        )
-        raise NotImplementedError(
-            f"Module '{args.module}' is not implemented. Available modules are: {available_modules}..."
-        )
+        types: str = ", ".join(modules.keys())
+        logger.warning(f"'{args.module}' isn't a valid model. Try: {types}")
+        warnings.warn(f"'{args.module}' isn't available. Options: {types}", UserWarning)
     else:
-        logger.info(f"Selected module: {args.module}...")
+        logger.info(f"Using {args.module} model")
 
-    # Initialize the selected model architecture
-    logger.info("Initializing selected segmentation model...")
+    # Create the model
+    logger.info("Setting up the model...")
     try:
-        module: nn.Module = modules[args.module](
+        model: nn.Module = modules[args.module](
             classes=args.classes,
             channels=args.channels,
             weights=args.weights,
         )
-        logger.info(
-            f"Successfully initialized {args.module} with {args.classes} classes..."
-        )
+        logger.info(f"Model ready! {args.module} set up for {args.classes} classes")
     except Exception as error:
-        logger.error(f"Failed to initialize model: {str(error)}...")
-        raise Exception(f"Model initialization failed: {str(error)}...", RuntimeWarning)
+        logger.error(f"Couldn't create model: {str(error)}")
+        raise Exception(f"Model setup failed: {str(error)}", RuntimeWarning)
 
-    # Initialize the training system
-    logger.info("Initializing trainer...")
+    # Set up the trainer
+    logger.info("Getting the trainer ready...")
     try:
         trainer: Trainer = Trainer(
-            module=module,
+            module=model,
             training_path=args.training_path,
             validation_path=args.validation_path,
             testing_path=args.testing_path,
@@ -308,40 +295,46 @@ if __name__ == "__main__":
             lr=args.learning_rate,
             decay=args.weight_decay,
             gamma=args.gamma,
+            momentum=args.momentum,
             workers=args.workers,
             seed=args.seed,
-            parallelism=args.parallelism,
         )
-        logger.info("Trainer initialized successfully...")
+        logger.info("Trainer is ready to go")
     except Exception as error:
-        logger.error(f"Failed to initialize trainer: {str(error)}...")
-        raise Exception(f"Trainer initialization failed: {str(error)}...", RuntimeWarning)
+        logger.error(f"Trainer setup failed: {str(error)}")
+        raise Exception(f"Couldn't set up trainer: {str(error)}", RuntimeWarning)
 
-    # Execute the training process
-    logger.info("Starting segmentation training process...")
+    # Start training!
+    logger.info("Starting training...")
     try:
         asyncio.run(trainer.train())
-        logger.info("Training completed successfully...")
+        logger.info("Training finished!")
     except Exception as error:
-        logger.error(f"Training failed: {str(error)}...")
-        warnings.warn(f"Training process failed: {str(error)}...", RuntimeWarning)
+        logger.error(f"Training crashed: {str(error)}")
+        warnings.warn(f"Training failed: {str(error)}", RuntimeWarning)
 
-    # Execute testing process
-    logger.info("Starting testing process...")
-    try:
-        asyncio.run(trainer.test())
-        logger.info("Testing completed successfully...")
-    except Exception as error:
-        logger.error(f"Testing failed: {str(error)}...")
-        warnings.warn(f"Testing process failed: {str(error)}...", RuntimeWarning)
+    # Test the model if we have test data
+    if args.testing_path is not None:
+        logger.info("Running final tests...")
+        try:
+            asyncio.run(trainer.test())
+            logger.info("Testing complete!")
+        except Exception as error:
+            logger.error(f"Testing failed: {str(error)}")
+            warnings.warn(f"Testing didn't work: {str(error)}", RuntimeWarning)
+    else:
+        logger.info("No test data provided, skipping tests")
 
-    # Save the trained model to specified output path
-    logger.info(f"Saving trained model to: {args.output}...")
-    try:
-        trainer.save(filepath=args.output)
-        logger.info("Model saved successfully...")
-    except Exception as error:
-        logger.error(f"Failed to save model: {str(error)}...")
-        warnings.warn(f"Model saving failed: {str(error)}...", RuntimeWarning)
+    # Save the model if they want us to
+    if args.output:
+        logger.info(f"Saving model to {args.output}...")
+        try:
+            trainer.save(filepath=args.output)
+            logger.info("Model saved!")
+        except Exception as error:
+            logger.error(f"Couldn't save model: {str(error)}")
+            warnings.warn(f"Model saving failed: {str(error)}", RuntimeWarning)
+    else:
+        logger.warning("No save path provided - your model won't be saved")
 
-    logger.info("Segmentation training application completed successfully...")
+    logger.info("All done!")
