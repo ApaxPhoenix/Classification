@@ -24,12 +24,12 @@ class DatasetLoader(Dataset):
     Expected directory structure:
         dataset/
         ├── class1/
-        │   ├── class001.jpg
-        │   ├── class002.png
+        │   ├── image001.jpg
+        │   ├── image002.png
         │   └── ...
         └── class2/
-            ├── class001.jpg
-            ├── class002.png
+            ├── image001.jpg
+            ├── image002.png
             └── ...
 
     The subdirectory names become class labels, and all supported image
