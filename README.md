@@ -69,37 +69,6 @@ python main.py \
 - `--gamma` - LR decay rate
 - `--momentum` - For SGD
 
-### Real Example
-
-```bash
-python main.py \
-  --module efficientnet-b0 \
-  --classes 100 \
-  --training-path ./datasets/train \
-  --validation-path ./datasets/val \
-  --testing-path ./datasets/test \
-  --dimensions 224 224 \
-  --epochs 50 \
-  --batch-size 32 \
-  --learning-rate 0.001 \
-  --weight-decay 0.0005 \
-  --momentum 0.9 \
-  --workers 8 \
-  --seed 42 \
-  --output ./model.pt
-```
-
-## What Happens During Training
-
-Pretty straightforward flow:
-
-1. Model gets initialized with your settings
-2. Data loaders spin up for training and validation
-3. Training loop runs with automatic gradient updates
-4. Validation happens after each epoch
-5. Optional test evaluation at the end
-6. Best weights get saved based on validation performance
-
 ## Logging
 
 Logs are split into four files so you're not hunting through one massive log:
@@ -134,4 +103,4 @@ Each model comes with sensible defaults, but you'll probably want to tweak thing
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for detai
+This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
