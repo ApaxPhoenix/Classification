@@ -83,8 +83,7 @@ class DatasetLoader(Dataset):
         Retrieve image and label at specified index with error recovery.
 
         Attempts to load the requested image, automatically skipping corrupted
-        files and trying subsequent indices until a valid image is found or
-        all images are exhausted.
+        files and trying subsequent indices until a valid image is found.
 
         Args:
             idx: Index of image to retrieve
@@ -113,12 +112,6 @@ class DatasetLoader(Dataset):
             # Handle corrupted or unreadable image files
             logger.error(f"Failed to load image at index {idx}: {error}")
             warnings.warn(f"Skipping corrupted image at index {idx}: {str(error)}")
-
-            # Prevent infinite loop when all images are corrupted
-            if idx + 1 >= len(self):
-                logger.error("All remaining images unreadable - dataset may be corrupted")
-                warnings.warn("No valid images available - verify dataset integrity")
-                return None, None
 
             # Recursively try the next index
             return self.__getitem__(idx + 1)
